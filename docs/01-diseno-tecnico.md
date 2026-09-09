@@ -1,6 +1,6 @@
-# Sistema Personal de Inteligencia de Inversión — Diseño Técnico (v0.1)
+# Sistema Personal de Inteligencia de Inversión — Diseño Técnico (v0.2)
 
-> **Estado: BORRADOR EN CONSTRUCCIÓN.** Continúa a `00-diseno-sistema-inversion.md` (diseño financiero, v1.5, cerrado). Este documento traduce ese motor financiero a arquitectura, base de datos y contratos de integración. Todavía **no se ha desplegado nada**: es diseño y selección de herramientas para tu aprobación, no infraestructura corriendo. La sección de costos (10) está pendiente de una investigación de precios/cobertura vigentes que se está verificando aparte, para no inventar cifras.
+> **Estado: PROPUESTA PARA APROBACIÓN.** Continúa a `00-diseno-sistema-inversion.md` (diseño financiero, v1.5, cerrado). Este documento traduce ese motor financiero a arquitectura, base de datos y contratos de integración. Todavía **no se ha desplegado nada**: es diseño y selección de herramientas para tu aprobación, no infraestructura corriendo. La sección 2 (APIs) y 10 (costos) ya incorporan una investigación de precios/cobertura vigentes con fuentes citadas; las cifras marcadas ⚠️ no se verificaron directamente en la página del proveedor y deben confirmarse antes de contratar.
 
 ---
 
@@ -69,15 +69,32 @@ Todo corre 24/7 en n8n Cloud + Supabase; nada depende de tu computadora ni de un
 
 ## 2. Selección de APIs de datos de mercado
 
-**Pendiente de completar con precios/cobertura verificados** (investigación en curso). El principio de diseño ya está definido y no cambia con el proveedor exacto: **arquitectura multi-provider**, porque ningún proveedor individual suele cubrir bien a la vez EE. UU. + México/BMV + fundamentals + noticias + precio del mismo nivel de calidad. Se evaluará entre Financial Modeling Prep, Polygon.io, Twelve Data, Finnhub, Tiingo y Alpha Vantage, con estos criterios de decisión (punto 36 del brief):
+Investigación de cobertura/precios vigentes hecha el 2026-09-09, contrastando páginas oficiales de cada proveedor. **Varias cifras quedan marcadas explícitamente como no verificadas** — no se van a usar en el presupuesto final sin confirmarlas directamente en la página del proveedor, por la regla de no inventar precios (punto 52 del brief).
 
-- Cobertura real de BMV (acciones mexicanas) — suele ser el filtro que más reduce las opciones.
-- Cobertura de EE. UU. (statements, estimados, corporate actions, earnings) para lo accesible vía SIC.
-- Datos históricos OHLCV suficientes para calcular indicadores técnicos (sección 11 del diseño financiero) con profundidad (ideal ≥2-3 años).
-- Rate limits compatibles con la frecuencia de actualización que definamos (diaria para fundamentals, intradía/diaria para precios — no se requiere tiempo real dado que no hay ejecución automática).
-- Costo, en relación con lo que realmente se usa (evitar pagar por cobertura que no se necesita, ej. crypto/forex si no está en el universo de la sección 9A del diseño financiero).
+### Hallazgo clave: cobertura de BMV (acciones mexicanas)
 
-Cuando la investigación de precios/cobertura esté lista, esta sección se completa con la recomendación específica (proveedor primario + proveedor complementario si hace falta) y el mapeo exacto de qué tabla de la base de datos se llena con cada proveedor.
+De los seis proveedores evaluados (Financial Modeling Prep, Polygon.io/Massive, Twelve Data, Finnhub, Tiingo, Alpha Vantage), **solo Twelve Data confirma cobertura documentada de la Bolsa Mexicana de Valores** (símbolo de mercado `XMEX`, ej. GMEXICOB) — y solo **end-of-day** (no intradía), disponible desde su tier **Pro ($99/mo)** en adelante; no viene incluida en el tier de entrada. Los otros cinco no mencionan México en ningún lado de su documentación pública, o lo excluyen explícitamente (ej. FMP limita expansión internacional a Reino Unido/Canadá; Polygon/Massive se declara "100% cobertura de EE. UU." sin mención de México). Finnhub no pudo verificarse en este punto (su página de precios bloqueó el acceso automatizado) — queda pendiente de una revisión manual si se quiere considerar.
+
+### Recomendación: proveedor único por fases, no multi-provider desde el día uno
+
+Dado que (a) no hay ejecución automática — por lo tanto datos EOD son suficientes, no hace falta tiempo real — y (b) el universo por fases del diseño financiero (sección 5A) ya prioriza ETFs sobre acciones individuales mientras el capital es pequeño, la selección se alinea con esa misma progresión en vez de pagar por cobertura de México desde el primer peso invertido:
+
+| Fase del portafolio (5A) | Proveedor | Plan | Qué cubre |
+|---|---|---|---|
+| **1. Cimientos** (ETFs + CETES, screening amplio de EE. UU.) | **Twelve Data** | "Grow" — **$29/mo** (verificado en su página oficial) | Acciones EE. UU. (accesibles vía SIC) y ETFs en tiempo real, fundamentals básicos, 27 mercados — sin México todavía, que no se necesita en esta fase |
+| **2. Expansión** (se activa el screening de acciones individuales, incluyendo MX) | **Twelve Data** | Upgrade a **"Pro" — $99/mo** (verificado) | Añade BMV (`XMEX`, EOD) sobre la misma integración ya construida — no se reconstruye el pipeline, solo se activa el mercado adicional |
+| **3. Madurez** (si la cobertura/profundidad de fundamentals de Twelve Data resulta insuficiente en la práctica) | + **Financial Modeling Prep "Starter"** (≈$29/mo, **cifra no verificada directamente en su página — bloqueó el acceso automatizado, confirmar antes de presupuestar**) como complemento | Fundamentals más profundos y noticias para EE. UU. | Proveedor secundario opcional, no obligatorio desde el inicio |
+
+Este orden evita el error de sobre-construir infraestructura de datos para un portafolio que todavía no tiene posiciones individuales en México — coherente con el principio de la sección 5A de no comprometer capital/complejidad antes de que la fase lo justifique.
+
+### Otros hallazgos relevantes
+
+- **Financial Modeling Prep**: fuerte en fundamentals/estados financieros y noticias de EE. UU. desde su tier de entrada, pero **sin cobertura de México en ningún tier** y con su precio exacto (~$29/$69 según fuentes secundarias) pendiente de confirmar en la página oficial (bloqueó el fetch automatizado).
+- **Polygon.io** (rebrandeado **Massive** desde oct-2025, misma API/keys): excelente para EE. UU. (incluye corporate actions desde el tier gratuito), sin México, $29/mo el tier pagado de entrada (verificado).
+- **Finnhub, Tiingo, Alpha Vantage**: sin evidencia de cobertura de México; se descartan para esa función. Podrían evaluarse como alternativas de EE. UU. si Twelve Data no satisface en pruebas, pero no son prioridad ahora.
+- Ningún proveedor de los seis, en los tiers accesibles para un usuario individual, ofrece un SLA contractual claro por debajo de sus tiers más caros (~$300+/mo) — se documenta como riesgo aceptado dado el uso personal, no institucional, del sistema.
+
+Con esto, la sección 2 queda cerrada para efectos de diseño: **Twelve Data como proveedor primario, con upgrade de tier (no de proveedor) al pasar de Fase 1 a Fase 2**, y FMP como complemento opcional a evaluar en la Fase 3 si hace falta.
 
 ## 3. Base de datos (Supabase / PostgreSQL)
 
@@ -433,7 +450,51 @@ API keys de datos de mercado, Claude, WhatsApp y credenciales de Supabase viven 
 
 ## 10. Costos (MVP / Recomendado / Profesional)
 
-**Pendiente** — se completa en cuanto termine de verificarse la cobertura y el precio vigente de: proveedores de datos de mercado, Supabase, n8n Cloud, y WhatsApp (Meta Cloud API vs. Twilio). No se van a estimar cifras sin verificar, por la regla explícita del punto 52 del brief ("no inventes precios").
+Investigación de precios hecha el 2026-09-09 contra las páginas oficiales de cada proveedor. **Cifras marcadas ⚠️ no se confirmaron directamente en la página del proveedor** (bloqueó el acceso automatizado o solo hay fuentes secundarias) — verificarlas antes de comprometer presupuesto. El costo de **Claude API es variable, por uso** (tokens procesados), no una cuota fija — con el volumen de un portafolio personal (decenas de tickers analizados periódicamente, no miles) se espera del orden de unos pocos dólares/mes, pero no se estima una cifra exacta sin medir el uso real en pruebas (paso 5 del roadmap, sección 11). Todos los precios de proveedores están en USD salvo que se indique lo contrario; conviene convertir a MXN con el tipo de cambio vigente al momento de contratar, no con uno fijo en este documento.
+
+### Nivel 1 — MVP (Fase 1 del portafolio: "Cimientos", solo ETFs/CETES)
+
+| Componente | Proveedor / plan | Costo mensual | Fuente |
+|---|---|---|---|
+| Datos de mercado | Twelve Data "Grow" | **$29 USD** | Verificado, página oficial |
+| Base de datos | Supabase Free | **$0** | Verificado, página oficial |
+| Automatización | n8n Cloud "Starter" | **€20 ≈ $22 USD** | Verificado, página oficial (confirmar tipo de cambio/moneda de cobro al contratar) |
+| WhatsApp | Meta Cloud API directo | **~$0-5 USD** (mensajes utility/servicio mayormente gratuitos dentro de ventana de 24h; volumen bajo esperado) | ⚠️ Tarifa exacta MX no verificada — Meta publica su tarifario como CSV/PDF descargable, revisar en WhatsApp Manager al dar de alta la cuenta |
+| Claude API | Pago por uso | **~$5-15 USD** (estimado, a medir) | No verificable sin uso real |
+| **Total aproximado** | | **≈ $61-71 USD/mes** | |
+
+### Nivel 2 — Recomendado (Fase 2: "Expansión", incluye acciones MX individuales)
+
+| Componente | Proveedor / plan | Costo mensual | Fuente |
+|---|---|---|---|
+| Datos de mercado | Twelve Data "Pro" (upgrade, añade BMV EOD) | **$99 USD** | Verificado, página oficial |
+| Base de datos | Supabase "Pro" (sin auto-pausa, backups diarios) | **$25 USD** base + uso | Verificado, página oficial |
+| Automatización | n8n Cloud "Starter" o "Pro" según volumen de ejecuciones | **€20-50 ≈ $22-55 USD** | Verificado, página oficial |
+| WhatsApp | Meta Cloud API directo | **~$5-10 USD** | ⚠️ Tarifa MX exacta no verificada |
+| Claude API | Pago por uso (mayor volumen de tickers analizados) | **~$15-30 USD** (estimado) | No verificable sin uso real |
+| **Total aproximado** | | **≈ $166-219 USD/mes** | |
+
+### Nivel 3 — Profesional (Fase 3: portafolio maduro, mayor profundidad de datos)
+
+| Componente | Proveedor / plan | Costo mensual | Fuente |
+|---|---|---|---|
+| Datos de mercado | Twelve Data "Pro" + FMP "Starter" (complemento fundamentals/news EE. UU.) | **$99 + ⚠️~$29 USD** (FMP no verificado directamente) | Parcialmente verificado |
+| Base de datos | Supabase "Pro" con mayor uso (egress/storage adicional) | **$25 USD** base + overages (variable) | Verificado el base, overages estimados |
+| Automatización | n8n Cloud "Pro" | **€50 ≈ $55 USD** | Verificado |
+| WhatsApp | Meta Cloud API directo (mayor volumen de alertas) | **~$10-20 USD** | ⚠️ Tarifa MX exacta no verificada |
+| Claude API | Pago por uso (mayor volumen + análisis más frecuente) | **~$30-60 USD** (estimado) | No verificable sin uso real |
+| **Total aproximado** | | **≈ $248-288 USD/mes** | |
+
+### Notas sobre WhatsApp: Meta directo vs. Twilio
+
+Se recomienda **Meta Cloud API directo** sobre Twilio para este caso: Twilio cobra una tarifa propia adicional confirmada de **$0.005 USD/mensaje** por encima de la tarifa base de Meta (verificado en la página oficial de Twilio), que para un uso personal de bajo volumen no compensa la comodidad de configuración adicional que ofrece — la verificación de Meta Business y aprobación de plantillas hay que hacerlas de todos modos incluso usando Twilio, porque Twilio no elimina ese requisito, solo lo envuelve. Si en la práctica la configuración directa con Meta resulta más complicada de lo esperado, Twilio queda como alternativa de respaldo con configuración más guiada.
+
+### Qué falta verificar antes de comprometer presupuesto real
+
+1. Precio exacto vigente de Financial Modeling Prep (su página de precios bloqueó el acceso automatizado dos veces).
+2. Tarifa exacta de Meta WhatsApp Cloud API para mensajes a números en México (solo se pudo confirmar el orden de magnitud — sub-$0.05 USD/mensaje — no la cifra exacta).
+3. Costo real de Claude API una vez medido con uso real en la fase de pruebas (paso 5 del roadmap).
+4. Moneda/tipo de cambio de cobro efectivo de n8n Cloud (cotiza en euros).
 
 ## 11. Roadmap de implementación (retomando el punto 50 del brief, pasos 8-16)
 
