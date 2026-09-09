@@ -1,4 +1,4 @@
-# Sistema Personal de Inteligencia de Inversión — Diseño Financiero (v1.4)
+# Sistema Personal de Inteligencia de Inversión — Diseño Financiero (v1.5 — CERRADO)
 
 > **Estado: PROPUESTA PARA APROBACIÓN.** No se ha construido infraestructura ni automatización todavía. Este documento define el motor financiero — filosofía, reglas, scoring, riesgo — que la tecnología (n8n, Claude API, base de datos, WhatsApp) ejecutará más adelante. Nada de esto se conecta a GBM ni ejecuta operaciones: toda decisión de compra/venta la ejecutas tú manualmente.
 
@@ -79,9 +79,9 @@ Ponderación v2 (perfil agresivo con control de riesgo) — **provisional, sujet
 | Risk/Reward | 10% | Relación upside/downside de la operación (sección 17 del framework) |
 | Riesgo / margen de seguridad | 5% (neto: penaliza riesgo, premia margen) | Concentración de clientes, riesgo regulatorio/binario vs. distancia precio actual-valor razonable |
 
-*Nota: el flujo de efectivo (conversión de utilidad a FCF) se evalúa siempre en el análisis fundamental profundo (sección 7), pero ya no tiene un peso propio en el score — queda incorporado dentro de "Fortaleza financiera" para dar más peso relativo a calidad, momentum, catalizadores y risk/reward, coherente con el sesgo agresivo solicitado.*
+*Nota: el flujo de efectivo (conversión de utilidad a FCF) se evalúa siempre en el análisis fundamental profundo (punto 7 del brief), pero ya no tiene un peso propio en el score — queda incorporado dentro de "Fortaleza financiera" para dar más peso relativo a calidad, momentum, catalizadores y risk/reward, coherente con el sesgo agresivo solicitado.*
 
-Score ≥ 80 con Confidence ≥ 75 y Risk/Reward ≥ 2.5 → candidato a **COMPRA/COMPRA FUERTE**. Score 60-79 → zona de **ESPERAR/OBSERVAR**. Score < 50 → fuera del radar salvo tesis de reversión explícita. (Estos umbrales también quedan sujetos a recalibración por backtesting, igual que la ponderación.)
+Los umbrales exactos de Score/Confidence/Risk-Reward para pasar de "candidato" a señal de **COMPRA** están **diferenciados por tramo Core/Satélite** (sección 6) — no son un único corte genérico, dado que el satélite exige más evidencia que el core. Como referencia general de zona: Score < 50 → fuera del radar salvo tesis de reversión explícita; Score entre 50 y el umbral mínimo del tramo → zona de **ESPERAR/OBSERVAR**. Todos estos cortes son parámetros en `system_config`, sujetos a recalibración por backtesting, igual que la ponderación.
 
 **Confidence** es independiente del Score: mide calidad/consistencia de la evidencia (cobertura de datos, ausencia de contradicciones, ausencia de eventos binarios inminentes), **no** probabilidad de ganar.
 
@@ -153,16 +153,25 @@ Cada vez que registres efectivo nuevo (aportación o venta), el sistema evalúa,
 
 ## 6. Cómo detectarás compras
 
-Una señal de compra requiere converger:
-- Score ≥ 75 y Confidence ≥ 70.
+Umbrales **diferenciados por tramo** — el perfil agresivo se expresa en el peso del satélite (5B) y en el tamaño de posición (5A), no en aceptar operaciones de menor calidad. El satélite táctico exige, de hecho, **más** evidencia que el core, porque su horizonte es más corto y su tolerancia a estar equivocado es menor:
+
+| Condición | Core | Satélite / Táctico |
+|---|---|---|
+| Score mínimo | ≥ 75 | ≥ 80 |
+| Confidence mínimo | ≥ 70 | ≥ 75 |
+| Risk/Reward mínimo | ≥ 2.0 | ≥ 2.5 |
+| Deterioro fundamental relevante | No debe existir | No debe existir (regla estricta, sin excepción) |
+| Evento binario crítico inminente | Se tolera si está cubierto/explicado en la tesis | **No se tolera**, salvo que el evento esté expresamente contemplado y cuantificado en la tesis como parte del catalizador |
+
+Además, comunes a ambos tramos:
 - Margen de seguridad "atractivo" o "amplio" (valuación por debajo de valor razonable base).
 - Entrada técnica "aceptable" o mejor (no extendida, cerca de soporte/zona de entrada, no en clímax de sobrecompra).
-- Risk/Reward ≥ 2:1 (idealmente ≥ 3:1 para COMPRA FUERTE).
 - Catalizador identificable o tendencia fundamental confirmada (no solo "se ve barata").
-- Sin riesgo binario crítico no cubierto (ej. decisión regulatoria pendiente sin visibilidad).
 - Rendimiento esperado supera claramente el costo de oportunidad (CETES/ETF, punto 24 del brief).
 
-Si falta cualquiera de estos, la salida es **ESPERAR**, no una compra "a medias" disfrazada.
+Si falta cualquiera de estas condiciones para el tramo correspondiente, la salida es **ESPERAR**, no una compra "a medias" disfrazada.
+
+**Parametrización (no hardcodear):** estos seis valores (Score/Confidence/R-R mínimos por tramo) viven como filas editables en la tabla `system_config` (sección 41 del brief), nunca como constantes en el código del motor de reglas (punto 40 del brief). Cada señal generada registra qué versión de parámetros usó, para que el backtesting (sección 20) pueda comparar resultados entre distintas calibraciones sin ambigüedad, y para recalibrar con evidencia — nunca a mano ni por intuición.
 
 ## 7. Cómo detectarás ventas
 
@@ -187,10 +196,34 @@ La salida siempre es una de: AUMENTAR, MANTENER, REDUCIR, TOMAR UTILIDAD, VENDER
 ## 9. Cómo buscarás nuevas oportunidades
 
 Screening en dos fases:
-1. **Cuantitativo (amplio, determinista)**: filtra el universo (acciones MX, SIC, ETFs, FIBRAs, renta fija) por combinaciones de calidad + valuación + momentum + catalizadores agendados (earnings), sin sesgo hacia "lo popular".
+1. **Cuantitativo (amplio, determinista)**: filtra el universo (sección 9A) por combinaciones de calidad + valuación + momentum + catalizadores agendados (earnings), sin sesgo hacia "lo popular".
 2. **Cualitativo (profundo, en candidatos que pasan el filtro)**: análisis completo de las 4 lentes, generación de tesis, escenarios y JSON estructurado.
 
 No se restringe a un índice o lista fija; se documentan los criterios de inclusión/exclusión para que el proceso sea repetible y auditable.
+
+### 9A. Universo de instrumentos (confirmado)
+
+Instrumentos elegibles para análisis y señales, todos accesibles vía GBM:
+
+- **Acciones mexicanas** (BMV).
+- **Acciones de EE. UU. vía SIC.**
+- **ETFs**, incluyendo explícitamente los que repliquen índices amplios relevantes (S&P 500, Nasdaq 100, Dow Jones) cuando estén disponibles en GBM/SIC — se habilitan como vehículo de exposición tanto para el núcleo (5B) como para completar el piso de diversificación en la Fase 1 (5A).
+- **FIBRAs.**
+- **Renta fija** y **CETES** (28/91/182/364 días) — piso permanente de liquidez/defensivo (5B) y comparables de costo de oportunidad (sección 18).
+
+Este universo aplica al screening (9), al análisis profundo, y al registro en la tabla `watchlist`/`fundamentals` (punto 41 del brief). No se excluye un instrumento por no ser popular ni se incluye solo porque lo sea — el criterio de inclusión es que el motor de scoring (sección 4) pueda evaluarlo con datos suficientes.
+
+### 9B. Benchmarks y régimen de mercado (monitoreo permanente)
+
+Independientemente de si generan señales de compra, estos índices/indicadores se monitorean **siempre**, como insumo obligatorio del diagnóstico de régimen (sección 2 y punto 3 del brief) y como referencia de desempeño (sección 19):
+
+- **S&P 500**
+- **Nasdaq 100**
+- **Dow Jones**
+- **IPC (México)**
+- **VIX**
+
+Se guardan en `market_snapshots` con periodicidad regular, y todo Score/Decisión generado incluye el régimen vigente derivado de estos cinco referentes (más los complementarios de la sección 3 del diagnóstico macro: breadth, curva de Treasuries, USD/MXN, DXY, etc., cuando estén disponibles).
 
 ## 10. Qué datos necesitas
 
@@ -250,12 +283,14 @@ Antes de aprobar capital nuevo hacia una idea, se compara explícitamente contra
 
 ## 19. Qué benchmarks utilizaré
 
-- **Renta variable EE. UU.**: S&P 500, Nasdaq 100 (y Russell 2000 para small caps).
+Referencias permanentes (monitoreo continuo, ver 9B): **S&P 500, Nasdaq 100, Dow Jones, IPC, VIX.** Complementarias:
+
+- **Renta variable EE. UU.**: S&P 500, Nasdaq 100, Dow Jones (y Russell 2000 para small caps).
 - **Renta variable México**: IPC.
 - **Riesgo/volatilidad**: VIX.
 - **Renta fija/costo de oportunidad**: CETES (28/91/182/364 días) y curva de Treasuries.
 - **Divisa**: USD/MXN, DXY (para exposición cambiaria del portafolio).
-- Cada posición y el portafolio completo se miden contra el benchmark más relevante a su geografía/sector, no solo contra un índice genérico.
+- Cada posición y el portafolio completo se miden contra el benchmark más relevante a su geografía/sector (ej. una posición SIC tech contra Nasdaq 100, no solo contra el IPC), además de contra las cinco referencias permanentes de régimen general.
 
 ## 20. Cómo mediré si el sistema realmente funciona
 
@@ -263,9 +298,9 @@ Toda señal emitida se guarda con timestamp, precio de entrada sugerido y contex
 
 ---
 
-## Parte técnica (resumen, pendiente de tu aprobación del diseño financiero)
+## Parte técnica (resumen orientativo — desarrollo detallado en el siguiente documento)
 
-Con el diseño financiero anterior aprobado, la implementación seguiría la arquitectura ya definida en el brief original:
+Con el diseño financiero ya cerrado, la implementación seguiría la arquitectura ya definida en el brief original. Este resumen no es aún un plan de construcción; se desarrolla en detalle una vez que confirmes que quieres avanzar a esta fase:
 
 - **21. Arquitectura cloud**: Datos de mercado/noticias → n8n Cloud (orquestación 24/7) → preprocesamiento determinista (indicadores, valuación, risk/reward calculados por código, no por IA) → Claude API (interpretación/síntesis/tesis) → motor de riesgo (position sizing, límites de portafolio) → base de datos (Supabase/Postgres) → motor de reglas de alerta → WhatsApp. Nada depende de tu computadora ni de Claude Code en ejecución continua; Claude Code se usa solo para desarrollar/desplegar.
 - **22. APIs recomendadas**: arquitectura multi-provider (ninguna API cubre US + México + fundamentals + news igual de bien) — a evaluar entre Financial Modeling Prep / Polygon / Twelve Data / Finnhub / Tiingo, combinando la mejor cobertura US, la mejor cobertura MX/SIC disponible, y una fuente de noticias financieras confiable.
@@ -280,12 +315,16 @@ Con el diseño financiero anterior aprobado, la implementación seguiría la arq
 
 ## Próximo paso
 
-Este documento es la propuesta de **diseño financiero** solicitada. Antes de tocar infraestructura (APIs, base de datos, n8n, WhatsApp), necesito tu aprobación o ajustes sobre:
+**Diseño financiero cerrado (v1.5).** Los cinco puntos que quedaban abiertos ya están definidos:
 
 1. ~~Las ponderaciones del scoring (sección 4)~~ → **definidas** (perfil agresivo v2), quedan sujetas a recalibración por backtesting, no a nueva aprobación manual.
 2. ~~Los límites por posición~~ → **definidos** (tabla por tramo Core/Satélite, sección 5A), con tope absoluto de 10% salvo justificación extraordinaria.
 3. ~~Tu drawdown máximo tolerable~~ → **confirmado vía cuestionario de tolerancia al riesgo**: límite duro 25%, zona de alerta desde 15% (sección 5, punto 5, y sección 1.1).
-4. Los umbrales de señal de compra (Score ≥ 75, Confidence ≥ 70, R/R ≥ 2, sección 6) — a revisar si quieres afinarlos para el perfil agresivo (ej. bajar Confidence mínimo o subir R/R mínimo exigido en el satélite).
-5. El universo inicial de instrumentos a cubrir (¿empezamos con ETFs + acciones MX + SIC, o agregamos renta fija/FIBRAs desde el día uno además del piso de CETES ya contemplado en la fase 1?).
+4. ~~Los umbrales de señal de compra~~ → **definidos y diferenciados por tramo** (Core: Score≥75/Confidence≥70/R-R≥2.0; Satélite: Score≥80/Confidence≥75/R-R≥2.5, sin deterioro fundamental, sin evento binario no contemplado en tesis — sección 6), parametrizados en `system_config`, no hardcodeados.
+5. ~~El universo inicial de instrumentos~~ → **definido**: acciones MX, acciones EE. UU. vía SIC, ETFs (incluyendo réplicas de S&P 500/Nasdaq 100/Dow Jones), FIBRAs, renta fija y CETES (sección 9A); benchmarks de régimen permanentes: S&P 500, Nasdaq 100, Dow Jones, IPC, VIX (sección 9B).
+
+Todos los parámetros numéricos (pesos de scoring, umbrales por tramo, límites de posición, bandas Core/Satélite/Liquidez, drawdown) son **valores iniciales razonados, no verdades fijas** — se recalibran con backtesting y resultados reales (sección 20), nunca a mano ni por intuición del sistema.
+
+Con esto, pasamos a la **parte técnica**: selección final de proveedor(es) de datos de mercado, diseño detallado de la base de datos, construcción del flujo en n8n, integración de Claude API, integración de WhatsApp, y estimación de costos — todavía sin escribir infraestructura, solo diseño y selección de herramientas, hasta que la apruebes.
 
 Con los puntos 4 y 5 resueltos, el diseño financiero queda cerrado y avanzamos a la sección técnica (APIs de datos, base de datos, n8n, Claude API, WhatsApp, costos).
