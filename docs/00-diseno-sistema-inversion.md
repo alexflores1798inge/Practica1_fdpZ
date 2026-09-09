@@ -1,4 +1,4 @@
-# Sistema Personal de Inteligencia de Inversión — Diseño Financiero (v1.3)
+# Sistema Personal de Inteligencia de Inversión — Diseño Financiero (v1.4)
 
 > **Estado: PROPUESTA PARA APROBACIÓN.** No se ha construido infraestructura ni automatización todavía. Este documento define el motor financiero — filosofía, reglas, scoring, riesgo — que la tecnología (n8n, Claude API, base de datos, WhatsApp) ejecutará más adelante. Nada de esto se conecta a GBM ni ejecuta operaciones: toda decisión de compra/venta la ejecutas tú manualmente.
 
@@ -23,7 +23,8 @@ Principios rectores:
 - **Aportaciones**: periódicas (monto/frecuencia a registrar conforme las hagas). Cada aportación dispara una re-evaluación de asignación (ver sección 5C).
 - **Horizonte**: principal a largo plazo (~10 años) — este es el horizonte que gobierna el grueso del portafolio (núcleo/*core* de crecimiento). De forma explícita, se busca también aprovechar oportunidades tácticas de **corto y mediano plazo** cuando el risk/reward es claramente atractivo (satélite táctico, con peso relevante) — ver sección 5B.
 - **Tolerancia al riesgo**: **agresiva, orientada a crecimiento de capital** — no conservadora. Esto se traduce en un satélite táctico con peso relevante (20-30% objetivo) y un core sesgado a crecimiento, no solo a estabilidad. Sigue siendo disciplinada: agresivo no es sinónimo de concentrado — se mantienen límites explícitos que evitan que una sola posición o apuesta comprometa el portafolio de forma desproporcionada (ver 5A y 5B).
-- **Necesidad de liquidez**: no inmediata (horizonte largo), pero se mantiene siempre un piso de efectivo/CETES para poder aprovechar correcciones sin vender posiciones existentes.
+- **Necesidad de liquidez**: **confirmado — ninguna.** Capital 100% de largo plazo; no se depende de él para gastos en los próximos 1-3 años. Se mantiene igualmente un piso de efectivo/CETES (5B) para poder aprovechar correcciones sin vender posiciones existentes, no por necesidad de liquidez sino por disciplina táctica.
+- **Drawdown máximo tolerable**: **confirmado — 25% (límite duro), con zona de alerta desde 15%** (ver sección 5, punto 5, para el detalle completo). Ante caídas de mercado sin ruptura de tesis, tu reacción declarada es aumentar posiciones, no vender — perfil coherente con "agresivo, orientado a crecimiento".
 - **Portafolio actual, precio promedio, exposición sectorial/país/moneda, % en efectivo**: aún no registrados — se derivan automáticamente del registro de transacciones/efectivo conforme empieces a operar, nunca se asumen.
 
 Este perfil reemplaza los supuestos placeholder usados en la v1.0 de este documento; los límites numéricos de las secciones 5 y 15 se actualizan a continuación para operar sobre capital real, no sobre un patrimonio objetivo.
@@ -92,7 +93,10 @@ Capas de control, de arriba hacia abajo. Todos los porcentajes se calculan sobre
 2. **Riesgo por posición**: tamaño determinado por convicción (Score/Confidence), volatilidad (ATR), distancia a la invalidación **y efectivo real disponible** — nunca un porcentaje arbitrario fijo ni un tamaño que exceda el efectivo/aportación disponible en ese momento (ver sección 15).
 3. **Riesgo por operación**: cada compra define invalidación (tesis) y stop técnico *antes* de entrar. El riesgo absoluto (precio de entrada − invalidación) determina cuánto capital se arriesga.
 4. **Riesgo de concentración oculta**: el sistema revisa correlaciones (ej. dos posiciones "distintas" con el mismo driver macro) para evitar diversificación falsa — especialmente relevante en portafolios pequeños, donde 2-3 posiciones correlacionadas pueden actuar como una sola.
-5. **Drawdown**: se monitorea el drawdown del portafolio contra tu tolerancia máxima declarada; si se aproxima al límite, el sistema recomienda reducir riesgo nuevo, no añadirlo. **⚠️ Parámetro provisional, no definitivo**: mientras se determina tu tolerancia real (ver preguntas al final de este documento), se usa como referencia de trabajo un **10% de drawdown del portafolio total**. Este número es solo un piso de trabajo para poder operar el diseño mientras tanto — no representa tu tolerancia real ni debe interpretarse como aprobado.
+5. **Drawdown — confirmado vía cuestionario de tolerancia al riesgo.** Tu perfil: ante una corrección de mercado de -20% sin ruptura de tesis, aumentarías posiciones (no venderías); tu drawdown máximo tolerable en un escenario de crisis es ~20-25%; el capital es 100% de largo plazo, sin necesidad de liquidez en 1-3 años. Esto confirma el perfil agresivo declarado y fija:
+   - **Límite duro de drawdown del portafolio: 25%.** Al acercarse a este nivel, el sistema deja de recomendar riesgo nuevo (nuevas posiciones satélite) hasta que el drawdown se estabilice o reduzca, sin forzar ventas de posiciones cuya tesis siga intacta.
+   - **Zona de alerta temprana: 15%.** Entre 15-25% de drawdown, el sistema exige mayor Confidence y Risk/Reward para abrir posiciones tácticas nuevas (no las bloquea, las hace más selectivas), y reporta el estado de forma explícita.
+   - **Una caída de mercado amplia sin deterioro fundamental NO es señal de venta.** Es coherente con tu propia respuesta ("aumentaría posiciones"): las correcciones de mercado se tratan como oportunidad para desplegar aportaciones/liquidez disponible en posiciones con tesis intacta y buena valuación (sección 5C), nunca como gatillo automático de compra ciega — sigue exigiéndose que la oportunidad cumpla el umbral de compra (sección 6).
 
 ### 5A. Fases de construcción del portafolio
 
@@ -280,12 +284,8 @@ Este documento es la propuesta de **diseño financiero** solicitada. Antes de to
 
 1. ~~Las ponderaciones del scoring (sección 4)~~ → **definidas** (perfil agresivo v2), quedan sujetas a recalibración por backtesting, no a nueva aprobación manual.
 2. ~~Los límites por posición~~ → **definidos** (tabla por tramo Core/Satélite, sección 5A), con tope absoluto de 10% salvo justificación extraordinaria.
-3. **Tu drawdown máximo tolerable — sigue pendiente.** Se usa 10% como referencia de trabajo provisional (sección 5, punto 5) mientras respondes el cuestionario de tolerancia al riesgo (ver abajo).
+3. ~~Tu drawdown máximo tolerable~~ → **confirmado vía cuestionario de tolerancia al riesgo**: límite duro 25%, zona de alerta desde 15% (sección 5, punto 5, y sección 1.1).
 4. Los umbrales de señal de compra (Score ≥ 75, Confidence ≥ 70, R/R ≥ 2, sección 6) — a revisar si quieres afinarlos para el perfil agresivo (ej. bajar Confidence mínimo o subir R/R mínimo exigido en el satélite).
 5. El universo inicial de instrumentos a cubrir (¿empezamos con ETFs + acciones MX + SIC, o agregamos renta fija/FIBRAs desde el día uno además del piso de CETES ya contemplado en la fase 1?).
 
-### Cuestionario para fijar tu drawdown máximo tolerable
-
-Te lo pregunto directamente a continuación de este documento (fuera del archivo), para poder fijar un número que sí refleje tu tolerancia real y no un supuesto.
-
-Con eso aprobado, avanzamos a la sección técnica (APIs, base de datos, n8n, Claude, WhatsApp, costos).
+Con los puntos 4 y 5 resueltos, el diseño financiero queda cerrado y avanzamos a la sección técnica (APIs de datos, base de datos, n8n, Claude API, WhatsApp, costos).
