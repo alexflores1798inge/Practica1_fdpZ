@@ -1,4 +1,4 @@
-# Sistema Personal de Inteligencia de Inversión — Diseño Financiero (v1.0)
+# Sistema Personal de Inteligencia de Inversión — Diseño Financiero (v1.1)
 
 > **Estado: PROPUESTA PARA APROBACIÓN.** No se ha construido infraestructura ni automatización todavía. Este documento define el motor financiero — filosofía, reglas, scoring, riesgo — que la tecnología (n8n, Claude API, base de datos, WhatsApp) ejecutará más adelante. Nada de esto se conecta a GBM ni ejecuta operaciones: toda decisión de compra/venta la ejecutas tú manualmente.
 
@@ -16,6 +16,17 @@ Principios rectores:
 4. **Efectivo y renta fija (CETES) son posiciones activas**, no un residuo. Si no hay oportunidad con margen de seguridad y risk/reward atractivo, la decisión correcta es esperar.
 5. **Ningún dato aislado decide nada.** Ninguna señal técnica, múltiplo o noticia individual genera una decisión; la decisión emerge de la convergencia de evidencia fundamental, técnica, macro y de valuación.
 6. **El sistema debe ser auditable.** Toda señal queda registrada con su resultado real, para poder medir honestamente si el proceso agrega valor.
+
+## 1.1 Perfil de inversión registrado (actualizado)
+
+- **Capital total**: no definido ni fijo — se está construyendo desde cero mediante aportaciones periódicas. El sistema **nunca asume un patrimonio objetivo**; toda referencia a "capital" en este documento significa el efectivo disponible registrado más el valor de mercado de las posiciones existentes, ambos leídos de tu registro real, no proyectados.
+- **Aportaciones**: periódicas (monto/frecuencia a registrar conforme las hagas). Cada aportación dispara una re-evaluación de asignación (ver sección 5C).
+- **Horizonte**: principal a largo plazo (~10 años) — este es el horizonte que gobierna el grueso del portafolio (núcleo/*core*). De forma secundaria, se aprovechan oportunidades de mediano plazo cuando el risk/reward es claramente atractivo (satélite/táctico) — ver sección 5B.
+- **Tolerancia al riesgo**: disciplinada; prioridad explícita en evitar concentraciones excesivas, sobre todo mientras el portafolio es pequeño y cada posición pesa proporcionalmente más (ver sección 5A).
+- **Necesidad de liquidez**: no inmediata (horizonte largo), pero se mantiene siempre un piso de efectivo/CETES para poder aprovechar correcciones sin vender posiciones existentes.
+- **Portafolio actual, precio promedio, exposición sectorial/país/moneda, % en efectivo**: aún no registrados — se derivan automáticamente del registro de transacciones/efectivo conforme empieces a operar, nunca se asumen.
+
+Este perfil reemplaza los supuestos placeholder usados en la v1.0 de este documento; los límites numéricos de las secciones 5 y 15 se actualizan a continuación para operar sobre capital real, no sobre un patrimonio objetivo.
 
 ## 2. Cómo tomarás decisiones
 
@@ -74,13 +85,43 @@ Score ≥ 80 con Confidence ≥ 75 y Risk/Reward ≥ 2.5 → candidato a **COMPR
 
 ## 5. Gestión de riesgo
 
-Capas de control, de arriba hacia abajo:
+Capas de control, de arriba hacia abajo. Todos los porcentajes se calculan sobre **capital total real** (efectivo disponible + valor de mercado de posiciones), recalculado en cada evaluación — nunca sobre un patrimonio objetivo futuro:
 
-1. **Riesgo de portafolio**: exposición máxima por sector (ej. ~25-30%), por emisora individual (ej. ~10-15% a precio de mercado), por país/moneda, y piso mínimo de efectivo/renta fija según tu perfil.
-2. **Riesgo por posición**: tamaño determinado por convicción (Score/Confidence), volatilidad (ATR), y distancia a la invalidación — nunca un porcentaje arbitrario fijo (ver punto 15).
+1. **Riesgo de portafolio**: exposición máxima por sector, por emisora individual y por país/moneda, escalonada por fase de construcción del portafolio (ver 5A) — un portafolio de 3 posiciones no puede aplicar los mismos límites que uno de 20. Piso mínimo permanente de efectivo/CETES.
+2. **Riesgo por posición**: tamaño determinado por convicción (Score/Confidence), volatilidad (ATR), distancia a la invalidación **y efectivo real disponible** — nunca un porcentaje arbitrario fijo ni un tamaño que exceda el efectivo/aportación disponible en ese momento (ver sección 15).
 3. **Riesgo por operación**: cada compra define invalidación (tesis) y stop técnico *antes* de entrar. El riesgo absoluto (precio de entrada − invalidación) determina cuánto capital se arriesga.
-4. **Riesgo de concentración oculta**: el sistema revisa correlaciones (ej. dos posiciones "distintas" con el mismo driver macro) para evitar diversificación falsa.
+4. **Riesgo de concentración oculta**: el sistema revisa correlaciones (ej. dos posiciones "distintas" con el mismo driver macro) para evitar diversificación falsa — especialmente relevante en portafolios pequeños, donde 2-3 posiciones correlacionadas pueden actuar como una sola.
 5. **Drawdown**: se monitorea el drawdown del portafolio contra tu tolerancia máxima declarada; si se aproxima al límite, el sistema recomienda reducir riesgo nuevo, no añadirlo.
+
+### 5A. Fases de construcción del portafolio
+
+Como el portafolio parte de cero, los límites de concentración y el tipo de instrumento priorizado cambian con la madurez del capital, no con un monto en pesos fijo (que dependerá de comisiones/mínimos reales de GBM a confirmar en la fase técnica):
+
+| Fase | Condición (no monto fijo) | Prioridad de asignación | Límite por posición individual (no-ETF) |
+|---|---|---|---|
+| **1. Cimientos** | El capital disponible no alcanza para abrir ~8-10 posiciones individuales sin que la comisión mínima de GBM erosione significativamente el monto (regla, no cifra fija — se calibra con el esquema real de comisiones) | ETFs amplios de bajo costo (diversificación instantánea) + reserva CETES | No aplica aún posición individual relevante; si se abre alguna de alta convicción, tope estricto (ej. ≤15%) |
+| **2. Expansión** | El capital ya permite 8-10+ posiciones diversificadas manteniendo comisión razonable (<~1-1.5% del monto por operación) | Se activa el motor de screening completo para acciones/FIBRAs individuales; el core ETF se mantiene como piso mínimo de la cartera | Límite intermedio (ej. ≤10-12%) |
+| **3. Madurez** | Portafolio con suficientes posiciones para diversificación real entre sectores/países | Portafolio core + satélite pleno (sección 5B); rebalanceo activo | Límite estándar (ej. ≤8-10%) |
+
+Los porcentajes de esta tabla son una propuesta inicial sujeta a tu aprobación (ver "Próximo paso"); lo que no es negociable es el principio: **nunca se recomienda un tamaño de posición que comprometa la diversificación mínima de la fase en la que está el portafolio en ese momento.**
+
+### 5B. Núcleo (Core) vs. Satélite (Táctico)
+
+Dado tu horizonte principal de 10 años con espacio para oportunismo de mediano plazo:
+
+- **Núcleo (Core)** — mayoría del capital desplegado (propuesta inicial: ~70-85%). ETFs amplios de bajo costo + empresas de altísima calidad con Score sostenido en el tiempo. Horizonte 10 años, rotación mínima. Solo sale por deterioro fundamental real, sobrevaluación extrema o rebalanceo por concentración — nunca por ruido técnico de corto plazo.
+- **Satélite (Táctico)** — resto del capital, con **tope explícito** (propuesta inicial: ~15-30% del capital total desplegado, nunca del 100% de una aportación). Oportunidades de mediano plazo con Risk/Reward ≥ 2.5-3, invalidación más ajustada, horizonte de tenencia esperado menor. El satélite nunca se financia reduciendo el piso de diversificación del núcleo.
+
+Esta separación evita que una "buena oportunidad táctica" te saque, sin darte cuenta, de tu plan de largo plazo.
+
+### 5C. Asignación de aportaciones periódicas
+
+Cada vez que registres efectivo nuevo (aportación o venta), el sistema evalúa, en este orden, y **nunca asume que todo el capital nuevo debe invertirse de inmediato**:
+
+1. ¿Alguna posición existente está en zona de "AUMENTAR" (tesis vigente, Score sostenido) y sigue por debajo de su límite de concentración de fase? → prioridad si el resto de condiciones de compra se cumplen.
+2. ¿El core ETF está por debajo de su piso de asignación (5B)? → se prioriza ahí para no perder diversificación mientras se evalúan oportunidades tácticas.
+3. ¿Existe una oportunidad nueva con Score/Confidence/R-R por encima del umbral de compra (sección 6) que además supere el costo de oportunidad de CETES/ETF (sección 18)? → se evalúa como candidata, respetando siempre los límites de fase (5A) y el tope del satélite (5B).
+4. Si nada de lo anterior aplica → la aportación se queda explícitamente en CETES/efectivo. Eso también es una decisión válida y se reporta como tal, no como "sin analizar".
 
 ## 6. Cómo detectarás compras
 
@@ -155,7 +196,13 @@ Regla explícita (punto 13 del brief): si el precio está significativamente ext
 
 ## 15. Cómo calcularé tamaño de posición
 
-Función de: **convicción** (Score/Confidence), **volatilidad** (ATR relativo), **riesgo definido por invalidación** (distancia % a la invalidación) y **límites de concentración del portafolio**. Método base: se define cuánto capital total estás dispuesto a arriesgar en la operación (no en la posición completa) según tu tolerancia; el tamaño de posición = riesgo tolerado ÷ distancia porcentual a la invalidación, acotado siempre por el límite máximo de concentración por emisora/sector. Nunca se usa un "% fijo para todas las compras" ni se promedia automáticamente a la baja — solo se aumenta una posición si la tesis sigue vigente y el nuevo tamaño respeta los mismos límites.
+El tamaño de posición es el **mínimo** de tres límites independientes — nunca se usa un "% fijo para todas las compras" ni se asume capital que no está registrado:
+
+1. **Límite por riesgo de la operación**: riesgo tolerado en la operación (definido por tu perfil, no arbitrario) ÷ distancia porcentual entre entrada e invalidación.
+2. **Límite por concentración de fase**: el tope por emisora/sector vigente según la fase de construcción del portafolio (sección 5A) y, si es táctica, el tope del satélite (sección 5B).
+3. **Límite por efectivo real disponible**: nunca se recomienda un monto mayor al efectivo disponible registrado en ese momento (aportación reciente + caja libre existente). El sistema no proyecta ni "reserva" capital futuro — si el efectivo disponible no alcanza para el tamaño ideal por riesgo/concentración, la recomendación se ajusta hacia abajo (o, si queda por debajo de un mínimo operativo razonable dados los costos de comisión de GBM, se recomienda esperar a la siguiente aportación en vez de forzar una compra subóptima).
+
+Todo el cálculo se recalcula en cada evaluación sobre el capital total real (efectivo + valor de mercado de posiciones) del momento — nunca sobre una cifra objetivo futura. No se promedia automáticamente a la baja: solo se aumenta una posición si la tesis sigue vigente y el nuevo tamaño respeta los tres límites anteriores.
 
 ## 16. Cómo definiré invalidación
 
@@ -194,7 +241,7 @@ Con el diseño financiero anterior aprobado, la implementación seguiría la arq
 
 - **21. Arquitectura cloud**: Datos de mercado/noticias → n8n Cloud (orquestación 24/7) → preprocesamiento determinista (indicadores, valuación, risk/reward calculados por código, no por IA) → Claude API (interpretación/síntesis/tesis) → motor de riesgo (position sizing, límites de portafolio) → base de datos (Supabase/Postgres) → motor de reglas de alerta → WhatsApp. Nada depende de tu computadora ni de Claude Code en ejecución continua; Claude Code se usa solo para desarrollar/desplegar.
 - **22. APIs recomendadas**: arquitectura multi-provider (ninguna API cubre US + México + fundamentals + news igual de bien) — a evaluar entre Financial Modeling Prep / Polygon / Twelve Data / Finnhub / Tiingo, combinando la mejor cobertura US, la mejor cobertura MX/SIC disponible, y una fuente de noticias financieras confiable.
-- **23. Base de datos**: Supabase/PostgreSQL con las tablas del punto 41 del brief (watchlist, portfolio, transactions, market_snapshots, fundamentals, analysis, signals, alerts, news, investment_thesis, performance, system_config, backtests).
+- **23. Base de datos**: Supabase/PostgreSQL con las tablas del punto 41 del brief (watchlist, portfolio, transactions, market_snapshots, fundamentals, analysis, signals, alerts, news, investment_thesis, performance, system_config, backtests). Las tablas `transactions` y `portfolio` son la **fuente de verdad del efectivo disponible** (ledger de aportaciones, compras/ventas y caja libre) — todo cálculo de sizing (sección 15) lee de ahí, nunca de un valor asumido.
 - **24. n8n**: orquesta el pipeline completo en n8n Cloud, con credenciales gestionadas vía n8n Credentials (nunca hardcodeadas).
 - **25. Claude API**: recibe el paquete estructurado (punto 38 del brief) y devuelve exclusivamente el JSON del punto 39, ampliado si hace falta; el cálculo cuantitativo (RSI, SMA, ATR, R/R, drawdown) ocurre en código antes de llegar a Claude, para reducir alucinaciones (punto 37).
 - **26. WhatsApp**: Meta WhatsApp Cloud API o Twilio, con plantilla ejecutiva (punto 42) y deduplicación por cooldown/cambio de estado (punto 43).
@@ -208,8 +255,9 @@ Con el diseño financiero anterior aprobado, la implementación seguiría la arq
 Este documento es la propuesta de **diseño financiero** solicitada. Antes de tocar infraestructura (APIs, base de datos, n8n, WhatsApp), necesito tu aprobación o ajustes sobre:
 
 1. Las ponderaciones del scoring (sección 4).
-2. Los límites de concentración/riesgo de portafolio (sección 5) — necesito tu capital total, capital disponible, aportaciones mensuales, horizonte y drawdown máximo tolerable reales para calibrarlos (por ahora son placeholders razonables).
-3. Los umbrales de señal de compra (Score ≥ 75, Confidence ≥ 70, R/R ≥ 2, sección 6).
-4. El universo inicial de instrumentos a cubrir (¿empezamos con acciones MX + SIC + ETFs, o agregamos renta fija/FIBRAs desde el día uno?).
+2. Los porcentajes propuestos de las secciones 5A (límites por fase) y 5B (tope del satélite táctico, ~15-30%) — son punto de partida razonable, no cifras derivadas de datos tuyos, porque aún no hay historial de operaciones.
+3. Tu drawdown máximo tolerable (aún no lo has definido) — pendiente para calibrar el punto 5 de gestión de riesgo (drawdown).
+4. Los umbrales de señal de compra (Score ≥ 75, Confidence ≥ 70, R/R ≥ 2, sección 6).
+5. El universo inicial de instrumentos a cubrir (¿empezamos con ETFs + acciones MX + SIC, o agregamos renta fija/FIBRAs desde el día uno además del piso de CETES ya contemplado en la fase 1?).
 
 Con eso aprobado, avanzamos a la sección técnica (APIs, base de datos, n8n, Claude, WhatsApp, costos).
