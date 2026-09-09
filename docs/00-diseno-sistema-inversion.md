@@ -1,4 +1,4 @@
-# Sistema Personal de Inteligencia de Inversión — Diseño Financiero (v1.1)
+# Sistema Personal de Inteligencia de Inversión — Diseño Financiero (v1.2)
 
 > **Estado: PROPUESTA PARA APROBACIÓN.** No se ha construido infraestructura ni automatización todavía. Este documento define el motor financiero — filosofía, reglas, scoring, riesgo — que la tecnología (n8n, Claude API, base de datos, WhatsApp) ejecutará más adelante. Nada de esto se conecta a GBM ni ejecuta operaciones: toda decisión de compra/venta la ejecutas tú manualmente.
 
@@ -6,13 +6,13 @@
 
 ## 1. Filosofía de inversión propuesta
 
-**Calidad razonable a precio razonable, con paciencia y gestión activa de riesgo.** El objetivo no es maximizar operaciones ni predecir el mercado a corto plazo; es maximizar el crecimiento compuesto de tu patrimonio a largo plazo, aceptando riesgo solo cuando el rendimiento potencial lo justifica claramente.
+**Crecimiento de capital con perfil agresivo, disciplina de riesgo y paciencia táctica.** El objetivo no es maximizar operaciones ni predecir el mercado a corto plazo; es maximizar el crecimiento compuesto de tu capital, asumiendo un nivel de riesgo mayor al conservador cuando el rendimiento potencial lo justifica con evidencia (no con expectativa). "Agresivo" aquí significa **mayor disposición a tomar riesgo asimétrico bien evaluado** (crecimiento, oportunidades tácticas, situaciones especiales) — no significa concentrar el portafolio ni abandonar el margen de seguridad.
 
 Principios rectores:
 
 1. **El precio y el valor son cosas distintas.** Compramos cuando el precio ofrece margen de seguridad frente al valor estimado; no perseguimos precio solo porque "está subiendo".
 2. **La tesis manda, no la emoción.** Cada posición tiene una tesis escrita, explícita, con condiciones de invalidación definidas *antes* de comprar.
-3. **El riesgo se gestiona, no se evita.** Buscamos asimetrías (upside > downside) en vez de evitar todo riesgo o asumir cualquier riesgo por FOMO.
+3. **El riesgo se gestiona, no se evita.** Buscamos asimetrías (upside > downside) en vez de evitar todo riesgo o asumir cualquier riesgo por FOMO. Con perfil agresivo, esto significa dar espacio deliberado a un componente táctico de mayor convicción (sección 5B) — pero siempre acotado, nunca abierto.
 4. **Efectivo y renta fija (CETES) son posiciones activas**, no un residuo. Si no hay oportunidad con margen de seguridad y risk/reward atractivo, la decisión correcta es esperar.
 5. **Ningún dato aislado decide nada.** Ninguna señal técnica, múltiplo o noticia individual genera una decisión; la decisión emerge de la convergencia de evidencia fundamental, técnica, macro y de valuación.
 6. **El sistema debe ser auditable.** Toda señal queda registrada con su resultado real, para poder medir honestamente si el proceso agrega valor.
@@ -21,8 +21,8 @@ Principios rectores:
 
 - **Capital total**: no definido ni fijo — se está construyendo desde cero mediante aportaciones periódicas. El sistema **nunca asume un patrimonio objetivo**; toda referencia a "capital" en este documento significa el efectivo disponible registrado más el valor de mercado de las posiciones existentes, ambos leídos de tu registro real, no proyectados.
 - **Aportaciones**: periódicas (monto/frecuencia a registrar conforme las hagas). Cada aportación dispara una re-evaluación de asignación (ver sección 5C).
-- **Horizonte**: principal a largo plazo (~10 años) — este es el horizonte que gobierna el grueso del portafolio (núcleo/*core*). De forma secundaria, se aprovechan oportunidades de mediano plazo cuando el risk/reward es claramente atractivo (satélite/táctico) — ver sección 5B.
-- **Tolerancia al riesgo**: disciplinada; prioridad explícita en evitar concentraciones excesivas, sobre todo mientras el portafolio es pequeño y cada posición pesa proporcionalmente más (ver sección 5A).
+- **Horizonte**: principal a largo plazo (~10 años) — este es el horizonte que gobierna el grueso del portafolio (núcleo/*core* de crecimiento). De forma explícita, se busca también aprovechar oportunidades tácticas de **corto y mediano plazo** cuando el risk/reward es claramente atractivo (satélite táctico, con peso relevante) — ver sección 5B.
+- **Tolerancia al riesgo**: **agresiva, orientada a crecimiento de capital** — no conservadora. Esto se traduce en un satélite táctico con peso relevante (20-30% objetivo) y un core sesgado a crecimiento, no solo a estabilidad. Sigue siendo disciplinada: agresivo no es sinónimo de concentrado — se mantienen límites explícitos que evitan que una sola posición o apuesta comprometa el portafolio de forma desproporcionada (ver 5A y 5B).
 - **Necesidad de liquidez**: no inmediata (horizonte largo), pero se mantiene siempre un piso de efectivo/CETES para poder aprovechar correcciones sin vender posiciones existentes.
 - **Portafolio actual, precio promedio, exposición sectorial/país/moneda, % en efectivo**: aún no registrados — se derivan automáticamente del registro de transacciones/efectivo conforme empieces a operar, nunca se asumen.
 
@@ -105,14 +105,26 @@ Como el portafolio parte de cero, los límites de concentración y el tipo de in
 
 Los porcentajes de esta tabla son una propuesta inicial sujeta a tu aprobación (ver "Próximo paso"); lo que no es negociable es el principio: **nunca se recomienda un tamaño de posición que comprometa la diversificación mínima de la fase en la que está el portafolio en ese momento.**
 
-### 5B. Núcleo (Core) vs. Satélite (Táctico)
+### 5B. Núcleo (Core) vs. Satélite (Táctico) — perfil agresivo, rangos dinámicos
 
-Dado tu horizonte principal de 10 años con espacio para oportunismo de mediano plazo:
+Dado tu perfil agresivo orientado a crecimiento de capital, con horizonte principal de 10 años y espacio explícito para oportunismo de **corto y mediano plazo**, la estructura objetivo es de **rangos**, no de porcentajes fijos:
 
-- **Núcleo (Core)** — mayoría del capital desplegado (propuesta inicial: ~70-85%). ETFs amplios de bajo costo + empresas de altísima calidad con Score sostenido en el tiempo. Horizonte 10 años, rotación mínima. Solo sale por deterioro fundamental real, sobrevaluación extrema o rebalanceo por concentración — nunca por ruido técnico de corto plazo.
-- **Satélite (Táctico)** — resto del capital, con **tope explícito** (propuesta inicial: ~15-30% del capital total desplegado, nunca del 100% de una aportación). Oportunidades de mediano plazo con Risk/Reward ≥ 2.5-3, invalidación más ajustada, horizonte de tenencia esperado menor. El satélite nunca se financia reduciendo el piso de diversificación del núcleo.
+| Componente | Rango objetivo | Contenido | Función |
+|---|---|---|---|
+| **Núcleo (Core) de crecimiento** | 60–70% | ETFs amplios (con sesgo a crecimiento/calidad, no solo "mercado total") + empresas de altísima calidad y Score sostenido, con tesis de crecimiento estructural (no solo estabilidad/dividendo). Horizonte 10 años, rotación mínima. | Motor principal de crecimiento compuesto a largo plazo. |
+| **Satélite táctico** | 20–30% | Oportunidades de mayor convicción: crecimiento acelerado, sectores específicos con momentum/catalizador, situaciones especiales (spin-offs, M&A, reestructuras), correcciones atractivas. Horizonte corto-mediano plazo, invalidación más ajustada. | Captura de asimetrías puntuales sin comprometer el plan de largo plazo. |
+| **Liquidez / defensivo** | 5–15% | Efectivo + CETES/renta fija de corto plazo. | Piso de seguridad + "pólvora seca" para aprovechar correcciones. |
 
-Esta separación evita que una "buena oportunidad táctica" te saque, sin darte cuenta, de tu plan de largo plazo.
+**Estos rangos no son fijos: se ajustan dinámicamente**, dentro de sus bandas, según:
+
+- **Régimen de mercado (sección 3 del diagnóstico macro)**: risk-on fuerte con breadth sana → el satélite puede acercarse a su banda alta (~30%) y la liquidez a su banda baja (~5%); risk-off (moderado o fuerte) → el satélite se reduce hacia su banda baja (~20%) y la liquidez sube hacia su banda alta (~15%), incluso temporalmente por debajo de 60% en core si se prioriza proteger capital ya desplegado.
+- **Valuación agregada del mercado/candidatos disponibles**: si el screening no arroja candidatos con margen de seguridad suficiente, el satélite se queda en su banda baja y el excedente permanece en liquidez — **nunca se fuerza a desplegar hacia el satélite solo por cercanía a la banda alta**.
+- **Volatilidad (VIX y ATR agregado del portafolio)**: volatilidad elevada → se exige mayor Risk/Reward y Confidence para abrir/ampliar posiciones tácticas nuevas, lo que naturalmente frena el satélite hacia su banda baja sin necesidad de una regla separada.
+- **Riesgo agregado del portafolio (drawdown, concentración, correlación)**: si el drawdown se acerca a tu tolerancia máxima o hay concentración oculta (5.4), no se añade satélite nuevo aunque haya efectivo disponible, hasta que el riesgo agregado vuelva a un nivel manejable.
+
+**Regla explícita (no negociable):** el efectivo disponible **no es, por sí mismo, motivo para aumentar exposición táctica**. El satélite crece únicamente cuando hay una oportunidad concreta que cumple el umbral de compra (Score/Confidence/R-R, sección 6) con margen de seguridad real — de lo contrario, el capital permanece en liquidez/CETES dentro de su banda, reportado explícitamente como "en espera de oportunidad", nunca como una omisión del sistema.
+
+Esta separación con bandas dinámicas evita dos fallas opuestas: (a) que una "buena oportunidad táctica" te saque, sin darte cuenta, de tu plan de largo plazo, y (b) que el sistema se vuelva pasivo/conservador por defecto cuando sí existen oportunidades atractivas — el propósito explícito del perfil agresivo que definiste.
 
 ### 5C. Asignación de aportaciones periódicas
 
@@ -255,8 +267,8 @@ Con el diseño financiero anterior aprobado, la implementación seguiría la arq
 Este documento es la propuesta de **diseño financiero** solicitada. Antes de tocar infraestructura (APIs, base de datos, n8n, WhatsApp), necesito tu aprobación o ajustes sobre:
 
 1. Las ponderaciones del scoring (sección 4).
-2. Los porcentajes propuestos de las secciones 5A (límites por fase) y 5B (tope del satélite táctico, ~15-30%) — son punto de partida razonable, no cifras derivadas de datos tuyos, porque aún no hay historial de operaciones.
-3. Tu drawdown máximo tolerable (aún no lo has definido) — pendiente para calibrar el punto 5 de gestión de riesgo (drawdown).
+2. Los límites por posición de la sección 5A (fases de construcción) — ya reflejan un perfil agresivo pero conviene tu visto bueno explícito, dado que ahora el satélite puede tomar posiciones de mayor convicción.
+3. Tu drawdown máximo tolerable (aún no lo has definido) — pendiente para calibrar el punto 5 de gestión de riesgo (drawdown) y las bandas dinámicas de la sección 5B.
 4. Los umbrales de señal de compra (Score ≥ 75, Confidence ≥ 70, R/R ≥ 2, sección 6).
 5. El universo inicial de instrumentos a cubrir (¿empezamos con ETFs + acciones MX + SIC, o agregamos renta fija/FIBRAs desde el día uno además del piso de CETES ya contemplado en la fase 1?).
 
