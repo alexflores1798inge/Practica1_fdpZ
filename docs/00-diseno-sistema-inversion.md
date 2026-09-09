@@ -1,4 +1,4 @@
-# Sistema Personal de Inteligencia de Inversión — Diseño Financiero (v1.2)
+# Sistema Personal de Inteligencia de Inversión — Diseño Financiero (v1.3)
 
 > **Estado: PROPUESTA PARA APROBACIÓN.** No se ha construido infraestructura ni automatización todavía. Este documento define el motor financiero — filosofía, reglas, scoring, riesgo — que la tecnología (n8n, Claude API, base de datos, WhatsApp) ejecutará más adelante. Nada de esto se conecta a GBM ni ejecuta operaciones: toda decisión de compra/venta la ejecutas tú manualmente.
 
@@ -65,21 +65,22 @@ Ninguna decisión de COMPRA se emite si falta evidencia de 3 de las 4 lentes. Si
 
 ## 4. Sistema de scoring (0–100)
 
-Ponderación propuesta (calibrable con backtesting, sección 20 y punto 40 del brief):
+Ponderación v2 (perfil agresivo con control de riesgo) — **provisional, sujeta a recalibración por backtesting** (sección 20 y punto 40 del brief); no se considera definitiva hasta validarse fuera de muestra:
 
 | Factor | Peso | Qué mide |
 |---|---|---|
-| Calidad del negocio | 15% | Moat, márgenes, consistencia, gestión |
+| Calidad del negocio | 20% | Moat, márgenes, consistencia, gestión |
 | Crecimiento | 15% | Revenue/EPS/FCF growth 1-3-5 años |
 | Valuación | 15% | Múltiplos vs. histórico/sector + DCF |
-| Fortaleza financiera | 10% | Deuda neta/EBITDA, cobertura de intereses, liquidez |
-| Flujo de efectivo | 10% | Conversión de utilidad a FCF, calidad de utilidades |
+| Fortaleza financiera | 10% | Deuda neta/EBITDA, cobertura de intereses, liquidez, conversión de utilidad a FCF |
 | Momentum / técnico | 15% | Tendencia, relative strength, estructura de precio |
 | Catalizadores | 10% | Eventos con impacto y probabilidad razonable |
-| Riesgo (penalización) | 5% (resta) | Concentración de clientes, riesgo regulatorio, binario |
-| Margen de seguridad | 5% | Distancia precio actual vs. valor razonable |
+| Risk/Reward | 10% | Relación upside/downside de la operación (sección 17 del framework) |
+| Riesgo / margen de seguridad | 5% (neto: penaliza riesgo, premia margen) | Concentración de clientes, riesgo regulatorio/binario vs. distancia precio actual-valor razonable |
 
-Score ≥ 80 con Confidence ≥ 75 y Risk/Reward ≥ 2.5 → candidato a **COMPRA/COMPRA FUERTE**. Score 60-79 → zona de **ESPERAR/OBSERVAR**. Score < 50 → fuera del radar salvo tesis de reversión explícita.
+*Nota: el flujo de efectivo (conversión de utilidad a FCF) se evalúa siempre en el análisis fundamental profundo (sección 7), pero ya no tiene un peso propio en el score — queda incorporado dentro de "Fortaleza financiera" para dar más peso relativo a calidad, momentum, catalizadores y risk/reward, coherente con el sesgo agresivo solicitado.*
+
+Score ≥ 80 con Confidence ≥ 75 y Risk/Reward ≥ 2.5 → candidato a **COMPRA/COMPRA FUERTE**. Score 60-79 → zona de **ESPERAR/OBSERVAR**. Score < 50 → fuera del radar salvo tesis de reversión explícita. (Estos umbrales también quedan sujetos a recalibración por backtesting, igual que la ponderación.)
 
 **Confidence** es independiente del Score: mide calidad/consistencia de la evidencia (cobertura de datos, ausencia de contradicciones, ausencia de eventos binarios inminentes), **no** probabilidad de ganar.
 
@@ -91,19 +92,30 @@ Capas de control, de arriba hacia abajo. Todos los porcentajes se calculan sobre
 2. **Riesgo por posición**: tamaño determinado por convicción (Score/Confidence), volatilidad (ATR), distancia a la invalidación **y efectivo real disponible** — nunca un porcentaje arbitrario fijo ni un tamaño que exceda el efectivo/aportación disponible en ese momento (ver sección 15).
 3. **Riesgo por operación**: cada compra define invalidación (tesis) y stop técnico *antes* de entrar. El riesgo absoluto (precio de entrada − invalidación) determina cuánto capital se arriesga.
 4. **Riesgo de concentración oculta**: el sistema revisa correlaciones (ej. dos posiciones "distintas" con el mismo driver macro) para evitar diversificación falsa — especialmente relevante en portafolios pequeños, donde 2-3 posiciones correlacionadas pueden actuar como una sola.
-5. **Drawdown**: se monitorea el drawdown del portafolio contra tu tolerancia máxima declarada; si se aproxima al límite, el sistema recomienda reducir riesgo nuevo, no añadirlo.
+5. **Drawdown**: se monitorea el drawdown del portafolio contra tu tolerancia máxima declarada; si se aproxima al límite, el sistema recomienda reducir riesgo nuevo, no añadirlo. **⚠️ Parámetro provisional, no definitivo**: mientras se determina tu tolerancia real (ver preguntas al final de este documento), se usa como referencia de trabajo un **10% de drawdown del portafolio total**. Este número es solo un piso de trabajo para poder operar el diseño mientras tanto — no representa tu tolerancia real ni debe interpretarse como aprobado.
 
 ### 5A. Fases de construcción del portafolio
 
 Como el portafolio parte de cero, los límites de concentración y el tipo de instrumento priorizado cambian con la madurez del capital, no con un monto en pesos fijo (que dependerá de comisiones/mínimos reales de GBM a confirmar en la fase técnica):
 
-| Fase | Condición (no monto fijo) | Prioridad de asignación | Límite por posición individual (no-ETF) |
+| Fase | Condición (no monto fijo) | Prioridad de asignación | Posiciones individuales (no-ETF) |
 |---|---|---|---|
-| **1. Cimientos** | El capital disponible no alcanza para abrir ~8-10 posiciones individuales sin que la comisión mínima de GBM erosione significativamente el monto (regla, no cifra fija — se calibra con el esquema real de comisiones) | ETFs amplios de bajo costo (diversificación instantánea) + reserva CETES | No aplica aún posición individual relevante; si se abre alguna de alta convicción, tope estricto (ej. ≤15%) |
-| **2. Expansión** | El capital ya permite 8-10+ posiciones diversificadas manteniendo comisión razonable (<~1-1.5% del monto por operación) | Se activa el motor de screening completo para acciones/FIBRAs individuales; el core ETF se mantiene como piso mínimo de la cartera | Límite intermedio (ej. ≤10-12%) |
-| **3. Madurez** | Portafolio con suficientes posiciones para diversificación real entre sectores/países | Portafolio core + satélite pleno (sección 5B); rebalanceo activo | Límite estándar (ej. ≤8-10%) |
+| **1. Cimientos** | El capital disponible no alcanza para abrir ~8-10 posiciones individuales sin que la comisión mínima de GBM erosione significativamente el monto (regla, no cifra fija — se calibra con el esquema real de comisiones) | ETFs amplios de bajo costo (diversificación instantánea) + reserva CETES | Excepcional; si se abre alguna de alta convicción, aplica el tope absoluto de la tabla de límites por tramo (máx. 10%, ver abajo) |
+| **2. Expansión** | El capital ya permite 8-10+ posiciones diversificadas manteniendo comisión razonable (<~1-1.5% del monto por operación) | Se activa el motor de screening completo para acciones/FIBRAs individuales; el core ETF se mantiene como piso mínimo de la cartera | Aplica la tabla de límites por tramo, con criterio conservador dentro de cada rango (extremo bajo de cada tramo) |
+| **3. Madurez** | Portafolio con suficientes posiciones para diversificación real entre sectores/países | Portafolio core + satélite pleno (sección 5B); rebalanceo activo | Aplica la tabla de límites por tramo en su rango completo |
 
-Los porcentajes de esta tabla son una propuesta inicial sujeta a tu aprobación (ver "Próximo paso"); lo que no es negociable es el principio: **nunca se recomienda un tamaño de posición que comprometa la diversificación mínima de la fase en la que está el portafolio en ese momento.**
+#### Límites por posición individual (por tramo Core/Satélite, perfil agresivo)
+
+| Tramo | Posición normal | Posición de alta convicción |
+|---|---|---|
+| **Core** | 5%–8% del portafolio | Hasta 10% |
+| **Satélite** | 2%–4% del portafolio | Hasta 5%–6% |
+
+**Reglas duras, no negociables:**
+- Ninguna posición individual supera **10% del portafolio** salvo justificación extraordinaria y explícita por escrito (tesis de convicción muy alta, respaldada por Score/Confidence elevados y catalizador claro) — nunca por default.
+- La exposición total del satélite se mantiene dentro de su banda dinámica de **20%–30%** (sección 5B); ninguna posición táctica individual, por sí sola, puede acercar al satélite a su límite superior sin que el resto del tramo quede subdimensionado (evita que "alta convicción" se convierta en concentración disfrazada).
+
+Los rangos de esta tabla son un punto de partida; se recalibran con backtesting, igual que el scoring (sección 4). Lo que no es negociable es el principio: **nunca se recomienda un tamaño de posición que comprometa la diversificación mínima de la fase en la que está el portafolio, ni que exceda el 10% absoluto sin justificación explícita.**
 
 ### 5B. Núcleo (Core) vs. Satélite (Táctico) — perfil agresivo, rangos dinámicos
 
@@ -266,10 +278,14 @@ Con el diseño financiero anterior aprobado, la implementación seguiría la arq
 
 Este documento es la propuesta de **diseño financiero** solicitada. Antes de tocar infraestructura (APIs, base de datos, n8n, WhatsApp), necesito tu aprobación o ajustes sobre:
 
-1. Las ponderaciones del scoring (sección 4).
-2. Los límites por posición de la sección 5A (fases de construcción) — ya reflejan un perfil agresivo pero conviene tu visto bueno explícito, dado que ahora el satélite puede tomar posiciones de mayor convicción.
-3. Tu drawdown máximo tolerable (aún no lo has definido) — pendiente para calibrar el punto 5 de gestión de riesgo (drawdown) y las bandas dinámicas de la sección 5B.
-4. Los umbrales de señal de compra (Score ≥ 75, Confidence ≥ 70, R/R ≥ 2, sección 6).
+1. ~~Las ponderaciones del scoring (sección 4)~~ → **definidas** (perfil agresivo v2), quedan sujetas a recalibración por backtesting, no a nueva aprobación manual.
+2. ~~Los límites por posición~~ → **definidos** (tabla por tramo Core/Satélite, sección 5A), con tope absoluto de 10% salvo justificación extraordinaria.
+3. **Tu drawdown máximo tolerable — sigue pendiente.** Se usa 10% como referencia de trabajo provisional (sección 5, punto 5) mientras respondes el cuestionario de tolerancia al riesgo (ver abajo).
+4. Los umbrales de señal de compra (Score ≥ 75, Confidence ≥ 70, R/R ≥ 2, sección 6) — a revisar si quieres afinarlos para el perfil agresivo (ej. bajar Confidence mínimo o subir R/R mínimo exigido en el satélite).
 5. El universo inicial de instrumentos a cubrir (¿empezamos con ETFs + acciones MX + SIC, o agregamos renta fija/FIBRAs desde el día uno además del piso de CETES ya contemplado en la fase 1?).
+
+### Cuestionario para fijar tu drawdown máximo tolerable
+
+Te lo pregunto directamente a continuación de este documento (fuera del archivo), para poder fijar un número que sí refleje tu tolerancia real y no un supuesto.
 
 Con eso aprobado, avanzamos a la sección técnica (APIs, base de datos, n8n, Claude, WhatsApp, costos).
