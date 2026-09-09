@@ -298,3 +298,26 @@ create table backtests (
     slippage_included        boolean not null default true,
     notes                    text
 );
+
+-- ---------------------------------------------------------------------------
+-- Row Level Security: habilitada en todas las tablas, sin políticas todavía.
+-- Efecto: la `service_role key` (la que usa n8n — sección 9 del diseño
+-- técnico) sigue teniendo acceso total, porque ese rol siempre ignora RLS en
+-- Supabase. La clave `anon`/`authenticated` (la que usaría un futuro
+-- frontend/dashboard) queda sin ningún acceso hasta que se definan políticas
+-- explícitas — correcto para esta etapa, donde el único cliente es el
+-- pipeline, no hay dashboard público todavía (sección 47 del brief).
+-- ---------------------------------------------------------------------------
+alter table system_config enable row level security;
+alter table investment_thesis enable row level security;
+alter table portfolio enable row level security;
+alter table transactions enable row level security;
+alter table watchlist enable row level security;
+alter table market_snapshots enable row level security;
+alter table fundamentals enable row level security;
+alter table analysis enable row level security;
+alter table signals enable row level security;
+alter table alerts enable row level security;
+alter table news enable row level security;
+alter table performance enable row level security;
+alter table backtests enable row level security;
