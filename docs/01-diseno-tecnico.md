@@ -96,6 +96,16 @@ Este orden evita el error de sobre-construir infraestructura de datos para un po
 
 Con esto, la sección 2 queda cerrada para efectos de diseño: **Twelve Data como proveedor primario, con upgrade de tier (no de proveedor) al pasar de Fase 1 a Fase 2**, y FMP como complemento opcional a evaluar en la Fase 3 si hace falta.
 
+### Corrección tras uso real (2026-09-10) — fundamentales
+
+Al construir y probar `analyze-candidate` en n8n se encontraron dos correcciones importantes a lo anterior, verificadas con llamadas reales (no solo documentación):
+
+1. **El endpoint `/statistics` de Twelve Data (fundamentales completos: márgenes, ROE, deuda, FCF, etc.) NO está incluido en el plan gratuito "Basic 8" para símbolos en general.** Funcionó en las primeras pruebas con `AAPL` — parece ser una excepción de demostración que Twelve Data da para ese símbolo específico — pero falló con `MSFT` con el mensaje explícito: *"/statistics is available exclusively with pro or ultra or venture or enterprise plans."* Además, la tabla de precios vigente en la fecha de esta corrección muestra una estructura de planes distinta a la investigada originalmente (Basic/Grow $79/Pro $229/Ultra $999, en vez de Basic/Grow $29/Pro $99) — los precios de Twelve Data cambiaron o la investigación previa quedó desactualizada. **No confiar en el precio de Twelve Data Pro citado arriba ($99/mo) sin volver a verificarlo al momento de decidir.**
+
+2. **Alpha Vantage sí ofrece fundamentales reales de forma gratuita**, vía su función `OVERVIEW` (`https://www.alphavantage.co/query?function=OVERVIEW&symbol=TICKER&apikey=...`). Verificado con una API key real (no la de demo) contra `MSFT` — un símbolo que específicamente había fallado en Twelve Data — con resultado exitoso: P/E, forward P/E, PEG, price/sales, price/book, EV/EBITDA, márgenes (bruto, operativo, neto), ROE, ROA, crecimiento de ingresos y utilidades, medias móviles de 50/200 días, beta, rango de 52 semanas, y hasta calificaciones/precio objetivo de analistas. Límite del tier gratuito: **25 solicitudes/día** (compartidas entre todas las funciones de Alpha Vantage). Carece de datos de deuda, efectivo y flujo de efectivo libre — se marca explícitamente como `data_gaps` en el paquete que recibe Claude, para que reduzca Confidence si esos factores importan en la tesis, en vez de asumir silenciosamente.
+
+**Arquitectura actualizada (vigente, funcionando en `analyze-candidate`):** Twelve Data (gratis) para precios/indicadores técnicos + Alpha Vantage (gratis) para fundamentales — sin costo mensual, cubre EE. UU. de forma amplia. Se mantiene la recomendación de subir a Twelve Data Pro (verificando el precio real primero) únicamente cuando el portafolio entre a Fase 2 y se necesite cobertura de BMV — no antes, y no solo por fundamentales de EE. UU., que ya están resueltos gratis.
+
 ## 3. Base de datos (Supabase / PostgreSQL)
 
 Esquema de las 13 tablas del punto 41 del brief, diseñado para reflejar las decisiones ya cerradas del diseño financiero (capital real vía ledger, tramos Core/Satélite, umbrales parametrizados, drawdown, backtesting). Tipos son orientativos (Postgres); se refinan en implementación.
@@ -453,6 +463,8 @@ API keys de datos de mercado, Claude, WhatsApp y credenciales de Supabase viven 
 Investigación de precios hecha el 2026-09-09 contra las páginas oficiales de cada proveedor. **Cifras marcadas ⚠️ no se confirmaron directamente en la página del proveedor** (bloqueó el acceso automatizado o solo hay fuentes secundarias) — verificarlas antes de comprometer presupuesto. El costo de **Claude API es variable, por uso** (tokens procesados), no una cuota fija — con el volumen de un portafolio personal (decenas de tickers analizados periódicamente, no miles) se espera del orden de unos pocos dólares/mes, pero no se estima una cifra exacta sin medir el uso real en pruebas (paso 5 del roadmap, sección 11). Todos los precios de proveedores están en USD salvo que se indique lo contrario; conviene convertir a MXN con el tipo de cambio vigente al momento de contratar, no con uno fijo en este documento.
 
 ### Nivel 1 — MVP (Fase 1 del portafolio: "Cimientos", solo ETFs/CETES)
+
+**Actualización (2026-09-10):** en la práctica, `analyze-candidate` quedó corriendo con **Twelve Data en plan gratuito "Basic" ($0) + Alpha Vantage gratuito ($0)** para precios, indicadores y fundamentales de EE. UU. — más barato que la tabla de abajo, que todavía asumía pagar por Twelve Data "Grow" desde el día uno. Mientras el volumen de análisis se mantenga bajo (Alpha Vantage limita a 25 consultas/día en su tier gratuito), no hace falta pagar nada por datos de mercado todavía.
 
 | Componente | Proveedor / plan | Costo mensual | Fuente |
 |---|---|---|---|
